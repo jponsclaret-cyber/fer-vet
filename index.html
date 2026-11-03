@@ -831,7 +831,8 @@ document.getElementById('dbfile').addEventListener('change', async e => {
     DB = data;
     document.getElementById('dbcount').textContent = DB.length;
     document.getElementById('analitzabtn').disabled = false;
-    document.getElementById('matchpill').innerHTML = '<span class="pill ok">Base carregada (' + DB.length + ' clients, només a la memòria del navegador)</span>';
+    document.getElementById('matchpill').innerHTML = '<span class="pill ok">Base carregada (' + DB.length + ' clients, només a la memòria del navegador)</span>' +
+      ' <span style="font-size:12px;color:#555">→ ara enganxa a la caixa les files dels clients del mes i prem <b>Analitza</b></span>';
   } catch (err) {
     dbError('Fitxer no vàlid: cal fervert_db.json o fervert_db.json.enc');
   }
@@ -897,8 +898,21 @@ function carregaTots(){
 }
 
 async function analitza(){
-  const text = document.getElementById('paste').value;
+  const ta = document.getElementById('paste');
+  const text = ta.value;
   const rows = parsePaste(text);
+  if (!rows.length) {
+    // sense files no hi ha res a analitzar: els clients de la base (fitxer) no són els del mes
+    monthly = [];
+    document.getElementById('warnbox').innerHTML = '';
+    document.getElementById('calcbtn').disabled = true;
+    document.getElementById('matchpill').innerHTML = '<span class="pill bad">' +
+      (text.trim() ? 'No s\'ha reconegut cap fila de client al text enganxat'
+                   : 'La caixa és buida: enganxa-hi primer les files dels clients del mes') + '</span>' +
+      ' <span style="font-size:12px;color:#555">Copia les files de la pestanya «Recollides GENERAL» de l\'Excel (amb el nom i el poble) i enganxa-les a la caixa de dalt.</span>';
+    ta.focus();
+    return;
+  }
   const matched = [];
   const fuzzy = [], unmatched = [];
   for (const r of rows){
