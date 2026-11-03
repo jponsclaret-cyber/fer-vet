@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fer-Vet — Optimitzador de rutes de recollida</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --verd:#2e7d32; --verd-fosc:#1b5e20; --verd-clar:#e8f5e9; --gris:#f5f5f5; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin:0; background:var(--gris); color:#222; }
+  header { background:var(--verd-fosc); color:#fff; padding:14px 24px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; }
+  header span { opacity:.8; font-size:13px; }
+  main { max-width:1500px; margin:0 auto; padding:16px; }
+  .card { background:#fff; border-radius:10px; padding:16px 18px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  h2 { font-size:15px; margin:0 0 10px; color:var(--verd-fosc); }
+  textarea { width:100%; height:140px; font-family:Menlo, monospace; font-size:12px; border:1px solid #ccc; border-radius:6px; padding:8px; resize:vertical; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  button { background:var(--verd); color:#fff; border:0; border-radius:6px; padding:9px 16px; font-size:14px; cursor:pointer; font-weight:600; }
+  button:hover { background:var(--verd-fosc); }
+  button.sec { background:#fff; color:var(--verd); border:1.5px solid var(--verd); }
+  button.mini { padding:3px 8px; font-size:11px; }
+  button:disabled { background:#bbb; border-color:#bbb; color:#fff; cursor:default; }
+  label.cfg { font-size:13px; display:flex; align-items:center; gap:6px; }
+  input[type=number] { width:64px; padding:5px; border:1px solid #ccc; border-radius:5px; font-size:13px; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+  .ok  { background:var(--verd-clar); color:var(--verd-fosc); }
+  .warn{ background:#fff3e0; color:#e65100; }
+  .bad { background:#ffebee; color:#b71c1c; }
+  #warnbox { font-size:13px; margin-top:10px; }
+  #warnbox ul { margin:6px 0; padding-left:20px; }
+  #map { height:78vh; min-height:560px; border-radius:10px; }
+  .rutes { display:grid; grid-template-columns:repeat(auto-fill,minmax(560px,1fr)); gap:12px; }
+  .ruta { background:#fff; border-radius:10px; padding:12px 14px; box-shadow:0 1px 3px rgba(0,0,0,.08); border-top:5px solid #999; break-inside:avoid; }
+  .ruta h3 { margin:0 0 4px; font-size:15px; }
+  .ruta .meta { font-size:12px; color:#666; margin-bottom:8px; }
+  .ruta ol { margin:0; padding-left:22px; font-size:13px; }
+  .ruta li { margin:3px 0; }
+  .ruta li .pob { color:#888; }
+  .ruta .links { margin-top:8px; font-size:12px; }
+  .ruta .links a { color:var(--verd); font-weight:600; margin-right:10px; }
+  .tot { font-size:14px; margin:10px 0; }
+  .tot b { color:var(--verd-fosc); }
+  .aprox { color:#e65100; font-weight:700; }
+  .prec { font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; margin-left:5px; vertical-align:1px; }
+  .prec-ok { background:#e8f5e9; color:#2e7d32; }
+  .prec-mig { background:#fff3e0; color:#e65100; }
+  .prec-baix { background:#ffebee; color:#b71c1c; }
+  #pwmodal { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; }
+  #pwmodal.open { display:flex; }
+  #pwbox { background:#fff; border-radius:10px; padding:20px; width:min(360px,90vw); box-shadow:0 8px 30px rgba(0,0,0,.3); }
+  #pwbox h3 { margin:0 0 10px; font-size:15px; color:var(--verd-fosc); }
+  #pwbox input { width:100%; font-size:20px; padding:8px 10px; letter-spacing:3px; border:1.5px solid #ccc; border-radius:6px; }
+  #pwbox .row { justify-content:flex-end; }
+  footer { text-align:center; font-size:11px; color:#999; padding:14px; }
+  @media print {
+    header, #cfgcard, #pastecard, #mapcard, .noprint, footer { display:none !important; }
+    body { background:#fff; }
+    .rutes { display:block; }
+    .ruta { box-shadow:none; border:1px solid #ccc; border-top:5px solid #999; margin-bottom:10px; page-break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚛 Fer-Vet — Rutes de recollida</h1>
+  <span>Depot: Riudellots de la Selva · <span id="dbcount">carregant…</span> clients a la base</span>
+</header>
+<main>
+
+<div class="card" id="pastecard">
+  <h2>1 · Clients del mes</h2>
+  <div style="font-size:13px;color:#555;margin-bottom:8px">
+    Enganxa les files senceres de l'Excel de recollides (pestanya «Recollides GENERAL»).
+    Els clients s'identifiquen pel codi de granja, el contracte o el nom.
+  </div>
+  <div style="margin-bottom:10px;font-size:13px"><b>0.</b> Base de clients: <input type="file" id="dbfile"></div>
+  <textarea id="paste" placeholder="1042	GRANJA CAN PUIG	Can Puig	Vilobí d'Onyar	Selva Interior
+1187	RAMADERIA MASNOU SL	Mas Nou	Cassà de la Selva	…"></textarea>
+  <div class="row">
+    <button id="analitzabtn" onclick="analitza()" disabled>Analitza el llistat</button>
+    <span id="matchpill">Selecciona primer el fitxer de clients (fervert_db.json.enc)</span>
+  </div>
+  <div id="warnbox"></div>
+</div>
+
+<div class="card" id="cfgcard">
+  <h2>2 · Paràmetres</h2>
+  <div class="row">
+    <label class="cfg" style="font-size:15px">Clients per dia <input type="number" id="maxper" value="18" min="3" max="40" style="width:74px;font-size:15px"></label>
+    <label class="cfg" style="font-size:15px">Màx. km per dia <input type="number" id="maxkm" value="300" min="50" max="1000" step="10" style="width:80px;font-size:15px"></label>
+    <label class="cfg" style="font-size:15px">Repartiment
+      <select id="mode" style="font-size:15px">
+        <option value="auto">Mínim de km (automàtic)</option>
+        <option value="zones">Per zones (Empordà / Girona i Sud)</option>
+      </select></label>
+    <button id="calcbtn" onclick="calcula()" disabled>Calcula les rutes</button>
+    <span id="status" style="font-size:13px;color:#e65100;font-weight:600"></span>
+  </div>
+  <div style="font-size:12px;color:#888;margin-top:6px">
+    El sistema agrupa per <b>zones</b> i optimitza per <b>km reals de carretera</b> (via OpenStreetMap), buscant el
+    <b>mínim de km totals del mes</b>. Cada ruta = un dia = un camió, i respecta els dos límits: nombre de clients <b>i</b> km per dia
+    (afegeix dies si cal). Deixa el km en blanc o 0 per no limitar.
+  </div>
+  <input type="hidden" id="osrm" value="on">
+</div>
+
+<div id="results" style="display:none">
+  <div class="card">
+    <h2>3 · Resultat</h2>
+    <div class="tot" id="totline"></div>
+    <div class="row noprint">
+      <button class="sec" onclick="exportCSV()">⬇ Exporta CSV</button>
+      <button class="sec" onclick="window.print()">🖨 Imprimeix full de rutes</button>
+    </div>
+  </div>
+  <div class="card" id="mapcard">
+    <div id="map"></div>
+    <div class="row noprint" style="margin:12px 0 0">
+      <button type="button" onclick="selectAllRoutes(false)">✖ Desactiva totes les rutes</button>
+      <button class="sec" type="button" onclick="selectAllRoutes(true)">Activa-les totes</button>
+      <span style="font-size:12px;color:#888">Després marca la casella de cada ruta (a sota) per anar-les afegint al mapa.</span>
+    </div>
+  </div>
+  <div class="rutes" id="rutes"></div>
+</div>
+
+</main>
+<footer>Fer-Vet · optimitzador local — la base de clients no surt del teu ordinador. Només s'envien coordenades (càlcul de rutes), codis d'explotació (registre REGA) i noms de pobles i masies (geocodificador ICGC), mai noms de persones.</footer>
+
+<div id="pwmodal">
+  <div id="pwbox">
+    <h3>🔒 Contrasenya del fitxer de clients</h3>
+    <input type="text" id="pwinput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="row">
+      <button class="sec" id="pwcancel" type="button">Cancel·la</button>
+      <button id="pwok" type="button">Obre</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Fer-Vet rutes: matching + clustering + TSP. Pure JS, sense dependències.
+
+const DEPOT = { lat: 41.9020, lon: 2.8103, nom: 'Fer-Vet (Riudellots)' };
+
+// ---------- normalització i matching ----------
+const STOPWORDS = new Set(['can','cal','mas','masia','granja','granges','casa','veinat','veïnat',
+  'sant','santa','sat','scp','slu','del','de','la','el','els','les','den','d','l',
+  'josep','joan','jaume','pere','miquel','ramon','xavier','jordi','marti','lluis','maria','anna','carles','narcis']);
+
+function norm(s) {
+  return String(s || '').toLowerCase()
+    .replace(/ñ/g, 'ny')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function tokens(s) {
+  return norm(s).split(' ').filter(t => t.length >= 4 && !STOPWORDS.has(t));
+}
+
+function editDist1(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, diff = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    diff++;
+    if (diff > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else { i++; j++; }
+  }
+  return diff + (a.length - i) + (b.length - j) <= 1;
+}
+
+function tokMatch(a, b) {
+  return a.slice(0, 4) === b.slice(0, 4) || editDist1(a, b);
+}
+
+// score paste-row vs db-client: nom+adreça+poble
+function matchScore(rowText, dbClient) {
+  const rt = tokens(rowText);
+  if (!rt.length) return 0;
+  const nomT = tokens(dbClient.nom);
+  const adrT = tokens(dbClient.adreca);
+  const pobT = tokens(dbClient.poble);
+  let score = 0;
+  for (const t of rt) {
+    if (adrT.some(d => tokMatch(t, d))) score += 2;
+    else if (nomT.some(d => tokMatch(t, d))) score += 2;
+    else if (pobT.some(d => tokMatch(t, d))) score += 1;
+  }
+  return score / (rt.length * 2); // 0..~1
+}
+
+// si diversos candidats (mateix id o mateix nom = granges diferents), tria per adreça/poble
+function pickBest(cands, row) {
+  if (cands.length === 1) return cands[0];
+  const rowText = [row.nom, row.adreca, row.poble, row.extra].filter(Boolean).join(' ');
+  let best = cands[0], bs = -1;
+  for (const c of cands) {
+    const s = matchScore(rowText, c);
+    if (s > bs) { bs = s; best = c; }
+  }
+  return best;
+}
+
+// Format "Recollides GENERAL": un mateix client (id/nom) pot tenir moltes granges a pobles diferents,
+// així que només s'accepta una coincidència si la granja és al mateix poble.
+function matchSheetRow(row, db) {
+  // codi de granja (marca REGA) desat a la base: coincidència exacta
+  if (row.marca) {
+    const hit = db.find(c => c.marca === row.marca);
+    if (hit) return { client: hit, via: 'id' };
+  }
+  const pt = tokens(row.poble);
+  const locOk = c => norm(row.poble) === norm(c.poble) || (pt.length > 0 && pt.some(t => tokens(c.poble).some(d => tokMatch(t, d))));   // Vic, Pi, Ger…: noms curts
+  const byId = db.filter(c => row.ids.includes(String(c.id)));
+  const rn = norm(row.nom);
+  const byNom = rn ? db.filter(c => norm(c.nom) === rn) : [];
+  const cands = [...new Set(byId.concat(byNom))].filter(locOk);
+  if (cands.length) return { client: pickBest(cands, row), via: byId.includes(cands[0]) ? 'id' : 'nom' };
+  const rowText = [row.nom, row.adreca, row.poble].filter(Boolean).join(' ');
+  let best = null, bestS = 0, second = 0;
+  for (const c of db.filter(locOk)) {
+    const sc = matchScore(rowText, c);
+    if (sc > bestS) { second = bestS; bestS = sc; best = c; }
+    else if (sc > second) second = sc;
+  }
+  if (best && bestS >= 0.6) return { client: best, via: bestS - second >= 0.15 ? 'fuzzy' : 'fuzzy?', score: bestS };
+  return null;
+}
+
+function matchClient(row, db) {
+  if (row.sheet) return matchSheetRow(row, db);
+  // 1) id exacte
+  if (row.id) {
+    const hits = db.filter(c => String(c.id) === String(row.id));
+    if (hits.length) return { client: pickBest(hits, row), via: 'id' };
+  }
+  // 2) nom normalitzat exacte
+  const rn = norm(row.nom);
+  if (rn) {
+    const hits = db.filter(c => norm(c.nom) === rn);
+    if (hits.length) return { client: pickBest(hits, row), via: 'nom' };
+  }
+  // 3) similitud tokens (nom + adreça + poble de la fila)
+  const rowText = [row.nom, row.adreca, row.poble].filter(Boolean).join(' ');
+  let best = null, bestS = 0, second = 0;
+  for (const c of db) {
+    const s = matchScore(rowText, c);
+    if (s > bestS) { second = bestS; bestS = s; best = c; }
+    else if (s > second) second = s;
+  }
+  if (best && bestS >= 0.6 && bestS - second >= 0.15) return { client: best, via: 'fuzzy', score: bestS };
+  if (best && bestS >= 0.6) return { client: best, via: 'fuzzy?', score: bestS };
+  return null;
+}
+
+// ---------- parsing del paste ----------
+function parsePaste(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  const rows = [];
+  for (const line of lines) {
+    let cells = line.includes('\t') ? line.split('\t')
+      : line.includes(';') ? line.split(';')
+      : line.split(',');
+    cells = cells.map(c => c.trim());
+    if (!cells.some(c => c)) continue;
+    // capçalera? (≥2 paraules de capçalera com a tokens exactes i cap cel·la numèrica)
+    const toks = new Set(norm(cells.join(' ')).split(' '));
+    const HDR = ['contracte','client','nom','adreca','poble','comarca','municipi','zona','freq','frequencia','data','id'];
+    if (HDR.filter(h => toks.has(h)).length >= 2 && !cells.some(c => /^\d{2,}$/.test(c))) continue;
+    // títol de ruta o de bloc ("OSONA 1 - DL 02/11/26", "PIRENAICA COOPE"): 1-2 cel·les en majúscules, sense números de client
+    const plenes = cells.filter(c => c);
+    if (plenes.length <= 2 && !/[a-zà-ÿ]/.test(plenes.join(' ')) && !plenes.some(c => /^\d+$/.test(c))) continue;
+    // full "Recollides GENERAL": [codi, clau,] núm. granja, núm. client, NOM, obs., última, tipus, propera, tipus, freq., explotació, POBLE
+    // Les columnes són fixes però les dates poden ser buides: la referència és el POBLE (el NOM és 8 columnes abans).
+    const DATA = /^\d{1,2}-\d{1,2}-\d{2,4}$/;
+    const d = cells.findIndex(c => DATA.test(c));
+    const MAJ = c => /^[^a-zà-ÿ0-9]*[A-ZÀ-Ý]{2}[^a-zà-ÿ0-9]*$/.test(c || '');   // POBLE: tot majúscules, sense xifres
+    let pb = -1;
+    if (d >= 0) {
+      if (MAJ(cells[d + 6])) pb = d + 6;            // la primera data és l'última recollida
+      else if (MAJ(cells[d + 4])) pb = d + 4;       // última recollida buida: la primera data és la propera
+      else for (let k = d + 3; k <= d + 9 && k < cells.length; k++) if (MAJ(cells[k])) { pb = k; break; }
+    }
+    if (pb >= 8) {
+      const ids = cells.slice(Math.max(0, pb - 10), pb - 8).map(c => (c.match(/^\d+/) || [''])[0]).filter(Boolean);
+      const nom = cells[pb - 8], poble = cells[pb], prev = cells[pb - 1] || '';
+      const adreca = (!/^\d+([.,]\d+)?$/.test(prev) && !DATA.test(prev) && !/^(no )?rec|^alta|^baixa/i.test(prev)) ? prev : '';
+      // marca oficial del registre ramader (REGA): al full surt sense el 4t dígit (216AT = 2160AT)
+      const mk = cells.slice(pb + 1).find(c => /^\d{3,4}[A-Z]{2}$/.test(c));
+      const marca = mk ? (mk.length === 5 ? mk.slice(0, 3) + '0' + mk.slice(3) : mk) : '';
+      rows.push({ sheet: true, ids, id: ids[0] || '', nom, adreca, poble, marca, extra: cells[pb - 7],
+        raw: [nom, adreca, poble].filter(Boolean).join(' · ') });
+      continue;
+    }
+    const row = { raw: line };
+    // id = primera cel·la totalment numèrica
+    const idIdx = cells.findIndex(c => /^\d+$/.test(c));
+    if (idIdx >= 0) row.id = cells[idIdx];
+    const textCells = cells.filter((c, i) => i !== idIdx && c && !/^\d+([.,]\d+)?$/.test(c));
+    row.nom = textCells[0] || '';
+    row.adreca = textCells[1] || '';
+    row.poble = textCells[2] || '';
+    row.extra = textCells.slice(3).join(' ');
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ---------- distàncies ----------
+function haversine(a, b) {
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// ---------- TSP per ruta: nearest neighbour + 2-opt ----------
+function routeOrder(stops, depot) {
+  if (stops.length <= 1) return stops.slice();
+  // NN
+  const rem = stops.slice();
+  const path = [];
+  let cur = depot;
+  while (rem.length) {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < rem.length; i++) {
+      const d = haversine(cur, rem[i]);
+      if (d < bd) { bd = d; bi = i; }
+    }
+    cur = rem.splice(bi, 1)[0];
+    path.push(cur);
+  }
+  // 2-opt (amb depot als extrems)
+  const pts = [depot, ...path, depot];
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 1; i < pts.length - 2; i++) {
+      for (let j = i + 1; j < pts.length - 1; j++) {
+        const delta = haversine(pts[i - 1], pts[j]) + haversine(pts[i], pts[j + 1])
+          - haversine(pts[i - 1], pts[i]) - haversine(pts[j], pts[j + 1]);
+        if (delta < -1e-6) {
+          let a = i, b = j;
+          while (a < b) { const t = pts[a]; pts[a] = pts[b]; pts[b] = t; a++; b--; }
+          improved = true;
+        }
+      }
+    }
+  }
+  return pts.slice(1, -1);
+}
+
+function routeKm(orderedStops, depot, roadFactor) {
+  if (!orderedStops.length) return 0;
+  let km = haversine(depot, orderedStops[0]);
+  for (let i = 0; i < orderedStops.length - 1; i++) km += haversine(orderedStops[i], orderedStops[i + 1]);
+  km += haversine(orderedStops[orderedStops.length - 1], depot);
+  return km * roadFactor;
+}
+
+// ---------- clustering: sweep per angle + relocate ----------
+function cluster(clients, depot, maxPerDay) {
+  const k = Math.max(1, Math.ceil(clients.length / maxPerDay));
+  const withAngle = clients.map(c => ({
+    c, ang: Math.atan2(c.lat - depot.lat, (c.lon - depot.lon) * Math.cos(depot.lat * Math.PI / 180))
+  }));
+  withAngle.sort((a, b) => a.ang - b.ang);
+
+  // prova diversos offsets d'inici del sweep, tria el de menys km total
+  let best = null, bestKm = Infinity;
+  const nOffsets = Math.min(12, clients.length);
+  for (let o = 0; o < nOffsets; o++) {
+    const off = Math.floor(o * clients.length / nOffsets);
+    const rot = withAngle.slice(off).concat(withAngle.slice(0, off)).map(w => w.c);
+    const groups = [];
+    const size = clients.length / k;
+    for (let g = 0; g < k; g++) groups.push(rot.slice(Math.round(g * size), Math.round((g + 1) * size)));
+    let km = 0;
+    const ordered = groups.map(g => routeOrder(g, depot));
+    for (const g of ordered) km += routeKm(g, depot, 1);
+    if (km < bestKm) { bestKm = km; best = ordered; }
+  }
+
+  // relocate: mou clients entre rutes si redueix km total i cap ruta passa de max
+  let routes = best.map(g => g.slice());
+  for (let iter = 0; iter < 4; iter++) {
+    let moved = false;
+    for (let r = 0; r < routes.length; r++) {
+      for (let i = 0; i < routes[r].length; i++) {
+        const cli = routes[r][i];
+        const without = routes[r].slice(); without.splice(i, 1);
+        const kmR0 = routeKm(routeOrder(routes[r], depot), depot, 1);
+        const kmR1 = routeKm(routeOrder(without, depot), depot, 1);
+        const gain = kmR0 - kmR1;
+        let bestTarget = -1, bestDelta = -1e-6;
+        for (let t = 0; t < routes.length; t++) {
+          if (t === r || routes[t].length >= maxPerDay) continue;
+          const kmT0 = routeKm(routeOrder(routes[t], depot), depot, 1);
+          const withCli = routes[t].concat([cli]);
+          const kmT1 = routeKm(routeOrder(withCli, depot), depot, 1);
+          const delta = gain - (kmT1 - kmT0);
+          if (delta > bestDelta) { bestDelta = delta; bestTarget = t; }
+        }
+        if (bestTarget >= 0) {
+          routes[r] = without;
+          routes[bestTarget] = routes[bestTarget].concat([cli]);
+          moved = true;
+        }
+      }
+    }
+    routes = routes.filter(rt => rt.length);
+    if (!moved) break;
+  }
+  return routes.map(g => routeOrder(g, depot));
+}
+
+// ---------- OSRM: matriu de temps/distàncies reals per carretera ----------
+const OSRM = 'https://router.project-osrm.org';
+
+// points[0] = depot. Retorna { dur, dist, sym, n } — dur/dist direccionals, sym = duracions simetritzades per optimitzar
+async function buildMatrix(points, onProgress) {
+  const n = points.length;
+  const dur = Array.from({ length: n }, () => new Array(n).fill(0));
+  const dist = Array.from({ length: n }, () => new Array(n).fill(0));
+  const G = 50;
+  const groups = [];
+  for (let s = 0; s < n; s += G) groups.push(Array.from({ length: Math.min(G, n - s) }, (_, k) => s + k));
+  const total = groups.length * groups.length;
+  let done = 0;
+  for (const gi of groups) {
+    for (const gj of groups) {
+      const same = gi === gj;
+      const idxs = same ? gi : gi.concat(gj);
+      const coords = idxs.map(i => points[i].lon.toFixed(6) + ',' + points[i].lat.toFixed(6)).join(';');
+      const src = gi.map((_, k) => k);
+      const dst = same ? src : gj.map((_, k) => gi.length + k);
+      const url = OSRM + '/table/v1/driving/' + coords +
+        '?sources=' + src.join(';') + '&destinations=' + dst.join(';') + '&annotations=duration,distance';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('OSRM HTTP ' + res.status);
+      const j = await res.json();
+      if (j.code !== 'Ok') throw new Error('OSRM: ' + j.code);
+      const gjArr = same ? gi : gj;
+      for (let a = 0; a < gi.length; a++) {
+        for (let b = 0; b < gjArr.length; b++) {
+          dur[gi[a]][gjArr[b]] = (j.durations && j.durations[a][b] != null) ? j.durations[a][b] : Infinity;
+          dist[gi[a]][gjArr[b]] = (j.distances && j.distances[a][b] != null) ? j.distances[a][b] : 0;
+        }
+      }
+      done++;
+      if (onProgress) onProgress(done, total);
+    }
+  }
+  // punt no arribable per carretera -> fallback haversine (60 km/h)
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    if (!isFinite(dur[i][j])) { dur[i][j] = haversine(points[i], points[j]) / 60 * 3600 * 1.3; dist[i][j] = haversine(points[i], points[j]) * 1300; }
+  }
+  const sym = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (dur[i][j] + dur[j][i]) / 2));
+  const symDist = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (dist[i][j] + dist[j][i]) / 2));
+  return { dur, dist, sym, symDist, n };
+}
+
+// geometria + km/temps reals del recorregut final d'una ruta (per dibuixar al mapa)
+async function fetchRouteGeo(stops, depot) {
+  const pts = [depot, ...stops, depot];
+  const coords = pts.map(p => p.lon.toFixed(6) + ',' + p.lat.toFixed(6)).join(';');
+  const url = OSRM + '/route/v1/driving/' + coords + '?overview=full&geometries=geojson&steps=false';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('OSRM HTTP ' + res.status);
+  const j = await res.json();
+  if (j.code !== 'Ok' || !j.routes || !j.routes[0]) throw new Error('OSRM route: ' + j.code);
+  const r = j.routes[0];
+  return { latlngs: r.geometry.coordinates.map(c => [c[1], c[0]]), km: r.distance / 1000, mins: r.duration / 60 };
+}
+
+// ---------- TSP i clustering sobre matriu (índexs; 0 = depot) ----------
+function routeOrderM(stops, M) {
+  if (stops.length <= 1) return stops.slice();
+  const rem = stops.slice(), path = [];
+  let cur = 0;
+  while (rem.length) {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < rem.length; i++) { const d = M.sym[cur][rem[i]]; if (d < bd) { bd = d; bi = i; } }
+    cur = rem.splice(bi, 1)[0];
+    path.push(cur);
+  }
+  const pts = [0, ...path, 0];
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 1; i < pts.length - 2; i++) {
+      for (let j = i + 1; j < pts.length - 1; j++) {
+        const delta = M.sym[pts[i - 1]][pts[j]] + M.sym[pts[i]][pts[j + 1]]
+          - M.sym[pts[i - 1]][pts[i]] - M.sym[pts[j]][pts[j + 1]];
+        if (delta < -1e-9) {
+          let a = i, b = j;
+          while (a < b) { const t = pts[a]; pts[a] = pts[b]; pts[b] = t; a++; b--; }
+          improved = true;
+        }
+      }
+    }
+  }
+  return pts.slice(1, -1);
+}
+
+function routeCostM(ordered, M, key) {
+  if (!ordered.length) return 0;
+  let s = M[key][0][ordered[0]];
+  for (let i = 0; i < ordered.length - 1; i++) s += M[key][ordered[i]][ordered[i + 1]];
+  s += M[key][ordered[ordered.length - 1]][0];
+  return s;
+}
+
+// cost d'un grup = ordena la ruta (TSP per temps) i suma la DISTÀNCIA real d'aquest ordre.
+// Memoïtzat per (contingut del grup) — el mateix grup s'avalua molts cops durant la millora local.
+function symCostM(idxs, M) {
+  if (!idxs.length) return 0;
+  if (!M._memo) M._memo = new Map();
+  const key = idxs.slice().sort((a, b) => a - b).join(',');
+  const hit = M._memo.get(key);
+  if (hit !== undefined) return hit;
+  const o = routeOrderM(idxs, M);
+  const D = M.symDist || M.sym;
+  let s = D[0][o[0]];
+  for (let i = 0; i < o.length - 1; i++) s += D[o[i]][o[i + 1]];
+  s += D[o[o.length - 1]][0];
+  if (M._memo.size > 600000) M._memo.clear(); // topall de memòria (llistes grans + límit km estricte)
+  M._memo.set(key, s);
+  return s;
+}
+
+// millora local (relocate + swap) sobre un conjunt de rutes; objectiu = km reals
+// km reals estimats (matriu simètrica de distància, inclou anada/tornada al dipòsit)
+function routeKmM(idxs, M) { return idxs.length ? symCostM(idxs, M) / 1000 : 0; }
+
+function improveRoutes(routes, M, maxPerDay, maxKm) {
+  maxKm = maxKm || Infinity;
+  const cost = arr => symCostM(arr, M);
+  const kmOf = arr => symCostM(arr, M) / 1000;
+  const fits = (arr, cli) => arr.length < maxPerDay && kmOf(arr.concat([cli])) <= maxKm + 1e-6;
+  for (let iter = 0; iter < 50; iter++) {
+    let moved = false;
+    // (1) RELOCATE per reduir km totals (respectant nº clients i km/dia)
+    for (let r = 0; r < routes.length; r++) {
+      for (let i = 0; i < routes[r].length; i++) {
+        const cli = routes[r][i];
+        const without = routes[r].slice(); without.splice(i, 1);
+        const gain = cost(routes[r]) - cost(without);
+        let bestTarget = -1, bestDelta = 1e-6;
+        for (let t = 0; t < routes.length; t++) {
+          if (t === r || !fits(routes[t], cli)) continue;
+          const delta = gain - (cost(routes[t].concat([cli])) - cost(routes[t]));
+          if (delta > bestDelta) { bestDelta = delta; bestTarget = t; }
+        }
+        if (bestTarget >= 0) { routes[r] = without; routes[bestTarget] = routes[bestTarget].concat([cli]); moved = true; }
+      }
+    }
+    // (2) SWAP per reduir km totals (no canvia nº; ha de respectar km/dia a les dues rutes)
+    for (let r = 0; r < routes.length; r++) {
+      for (let t = r + 1; t < routes.length; t++) {
+        const cr0 = cost(routes[r]), ct0 = cost(routes[t]);
+        let bi = -1, bj = -1, bestDelta = 1e-6;
+        for (let i = 0; i < routes[r].length; i++) {
+          for (let j = 0; j < routes[t].length; j++) {
+            const nr = routes[r].slice(), nt = routes[t].slice();
+            const tmp = nr[i]; nr[i] = nt[j]; nt[j] = tmp;
+            if (kmOf(nr) > maxKm + 1e-6 || kmOf(nt) > maxKm + 1e-6) continue;
+            const delta = (cr0 + ct0) - (cost(nr) + cost(nt));
+            if (delta > bestDelta) { bestDelta = delta; bi = i; bj = j; }
+          }
+        }
+        if (bi >= 0) { const tmp = routes[r][bi]; routes[r][bi] = routes[t][bj]; routes[t][bj] = tmp; moved = true; }
+      }
+    }
+    // (3) REPARA rutes que passen del límit de km: treu clients al millor destí encara que pugi el cost total
+    for (let r = 0; r < routes.length; r++) {
+      let guard = 0;
+      while (kmOf(routes[r]) > maxKm + 1e-6 && routes[r].length > 1 && guard++ < maxPerDay) {
+        let bi = -1, bt = -1, bestInc = Infinity;
+        for (let i = 0; i < routes[r].length; i++) {
+          const cli = routes[r][i];
+          for (let t = 0; t < routes.length; t++) {
+            if (t === r || !fits(routes[t], cli)) continue;
+            const inc = cost(routes[t].concat([cli])) - cost(routes[t]);
+            if (inc < bestInc) { bestInc = inc; bi = i; bt = t; }
+          }
+        }
+        if (bi < 0) break; // cap destí possible -> es queda (infeasible a aquesta k)
+        const cli = routes[r][bi];
+        routes[r] = routes[r].slice(); routes[r].splice(bi, 1);
+        routes[bt] = routes[bt].concat([cli]);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return routes.filter(rt => rt.length);
+}
+
+// llavor per proximitat real (k-medoids amb capacitat): agrupa clients propers per carretera
+function medoidSeed(clientMis, M, k, maxPerDay, firstMedoid) {
+  const D = M.symDist || M.sym;
+  const N = clientMis.length;
+  // init medoids: farthest-point sampling (comença pel client indicat, o el més llunyà del dipòsit)
+  let medoids = [firstMedoid != null ? firstMedoid : clientMis.reduce((a, b) => D[0][b] > D[0][a] ? b : a, clientMis[0])];
+  while (medoids.length < k) {
+    let far = clientMis[0], farD = -1;
+    for (const c of clientMis) {
+      if (medoids.includes(c)) continue;
+      const md = Math.min(...medoids.map(m => D[m][c]));
+      if (md > farD) { farD = md; far = c; }
+    }
+    medoids.push(far);
+  }
+  let clusters = null;
+  for (let iter = 0; iter < 6; iter++) {
+    // assignació greedy respectant capacitat: parelles (client,medoid) per distància ascendent
+    const pairs = [];
+    for (const c of clientMis) for (let m = 0; m < k; m++) pairs.push([D[medoids[m]][c], c, m]);
+    pairs.sort((a, b) => a[0] - b[0]);
+    clusters = Array.from({ length: k }, () => []);
+    const done = new Set();
+    for (const [, c, m] of pairs) {
+      if (done.has(c) || clusters[m].length >= maxPerDay) continue;
+      clusters[m].push(c); done.add(c);
+    }
+    // qualsevol client sobrant (per cap) -> a la ruta amb lloc més propera
+    for (const c of clientMis) {
+      if (done.has(c)) continue;
+      let bm = -1, bd = Infinity;
+      for (let m = 0; m < k; m++) if (clusters[m].length < maxPerDay && D[medoids[m]][c] < bd) { bd = D[medoids[m]][c]; bm = m; }
+      clusters[bm >= 0 ? bm : 0].push(c); done.add(c);
+    }
+    // recompute medoids (element que minimitza suma de distàncies dins el clúster)
+    const newMed = clusters.map(cl => {
+      if (!cl.length) return medoids[0];
+      let best = cl[0], bestS = Infinity;
+      for (const a of cl) { let s = 0; for (const b of cl) s += D[a][b]; if (s < bestS) { bestS = s; best = a; } }
+      return best;
+    });
+    if (newMed.every((m, i) => m === medoids[i])) break;
+    medoids = newMed;
+  }
+  return clusters;
+}
+
+// clients: [{lat, lon, mi}] on mi = índex a la matriu. maxKm = límit de km/dia (opcional).
+// Retorna rutes com arrays d'índexs ordenats. Afegeix dies si cal per respectar clients/dia i km/dia.
+function clusterMatrix(clients, M, maxPerDay, maxKm) {
+  maxKm = maxKm || Infinity;
+  const n = clients.length;
+  const mis = clients.map(c => c.mi);
+  if (n === 0) return [];
+
+  const withAngle = clients.map(c => ({
+    c, ang: Math.atan2(c.lat - DEPOT.lat, (c.lon - DEPOT.lon) * Math.cos(DEPOT.lat * Math.PI / 180))
+  }));
+  withAngle.sort((a, b) => a.ang - b.ang);
+
+  const totalCost = routes => routes.reduce((s, g) => s + symCostM(g, M), 0);
+  const feasible = routes => routes.every(g => g.length <= maxPerDay && routeKmM(g, M) <= maxKm + 1e-6);
+  // excés total de km per sobre del límit (0 si compleix) — per triar el millor esforç quan és impossible
+  const overshoot = routes => routes.reduce((s, g) => s + Math.max(0, routeKmM(g, M) - maxKm), 0);
+
+  const kMin = Math.max(1, Math.ceil(n / maxPerDay));
+  const kMax = Math.min(n, kMin + 6); // topall de dies extra per no penjar-se amb límits impossibles
+  // millor esforç: prioritza menys excés sobre el límit, després menys km totals
+  let bestAny = null, bestAnyOver = Infinity, bestAnyCost = Infinity;
+  const considerAny = (routes) => {
+    const ov = overshoot(routes), c = totalCost(routes);
+    if (ov < bestAnyOver - 1e-6 || (Math.abs(ov - bestAnyOver) <= 1e-6 && c < bestAnyCost)) {
+      bestAnyOver = ov; bestAnyCost = c; bestAny = routes;
+    }
+  };
+
+  for (let k = kMin; k <= kMax; k++) {
+    if (k === 1) {
+      const one = [routeOrderM(mis, M)];
+      if (feasible(one)) return one;
+      considerAny(one);
+      continue;
+    }
+    const seeds = [];
+    // primera k (sense afegir dies): moltes llavors. k extres (per límit km): poques, per no penjar-se.
+    const extra = k > kMin;
+    const nSweep = extra ? 2 : (n <= 45 ? 12 : n <= 90 ? 5 : 3);
+    for (let o = 0; o < nSweep; o++) {
+      const off = Math.floor(o * n / nSweep);
+      const rot = withAngle.slice(off).concat(withAngle.slice(0, off)).map(w => w.c.mi);
+      const groups = [];
+      const size = n / k;
+      for (let g = 0; g < k; g++) groups.push(rot.slice(Math.round(g * size), Math.round((g + 1) * size)));
+      seeds.push(groups);
+    }
+    const nMedoid = extra ? 1 : (n <= 90 ? 4 : 2);
+    for (let s = 0; s < nMedoid; s++) {
+      const fm = withAngle[Math.floor(s * n / nMedoid)].c.mi;
+      seeds.push(medoidSeed(mis, M, k, maxPerDay, fm));
+    }
+
+    let best = null, bestCost = Infinity;
+    for (const groups of seeds) {
+      const improved = improveRoutes(groups.map(g => g.slice()), M, maxPerDay, maxKm);
+      const c = totalCost(improved);
+      if (c < bestCost) { bestCost = c; best = improved; }
+      considerAny(improved);
+    }
+    if (best && feasible(best)) return best.map(g => routeOrderM(g, M));
+  }
+  // cap k compleix el límit de km -> millor esforç (mínim excés, després mínim km)
+  return (bestAny || []).map(g => routeOrderM(g, M));
+}
+
+// angle (graus, 0-360) d'un client respecte al dipòsit — mateixa fórmula que usa el sweep de cluster()/clusterMatrix()
+function angleDeg(c, depot) {
+  depot = depot || DEPOT;
+  let a = Math.atan2(c.lat - depot.lat, (c.lon - depot.lon) * Math.cos(depot.lat * Math.PI / 180));
+  a = a * 180 / Math.PI;
+  if (a < 0) a += 360;
+  return a;
+}
+
+// agrupació per bandes concèntriques: ordena TOTS els clients per distància al dipòsit
+// i omple cada ruta amb els següents maxPerDay més propers (sense reoptimitzar per km total)
+function clusterByDistance(clients, depot, maxPerDay) {
+  const sorted = clients.slice().sort((a, b) => haversine(a, depot) - haversine(b, depot));
+  const routes = [];
+  for (let i = 0; i < sorted.length; i += maxPerDay) routes.push(sorted.slice(i, i + maxPerDay));
+  return routes.map(g => routeOrder(g, depot));
+}
+
+function clusterByDistanceM(clientsWithMi, M, maxPerDay) {
+  const sorted = clientsWithMi.slice().sort((a, b) => M.dist[0][a.mi] - M.dist[0][b.mi]);
+  const idxs = sorted.map(c => c.mi);
+  const routes = [];
+  for (let i = 0; i < idxs.length; i += maxPerDay) routes.push(idxs.slice(i, i + maxPerDay));
+  return routes.map(g => routeOrderM(g, M));
+}
+
+
+
+let DB = [];
+document.getElementById('dbcount').textContent = '0';
+// Desxifra un fitxer fet amb: openssl enc -aes-256-cbc -pbkdf2 (format "Salted__" + sal de 8 bytes)
+async function decryptOpenSSL(buf, pass) {
+  const b = new Uint8Array(buf);
+  if (new TextDecoder().decode(b.slice(0, 8)) !== 'Salted__') throw new Error('format');
+  const salt = b.slice(8, 16), data = b.slice(16);
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 10000, hash: 'SHA-256' }, km, 384));
+  const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), { name: 'AES-CBC' }, false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-CBC', iv: bits.slice(32, 48) }, key, data);
+  return new TextDecoder().decode(pt);
+}
+
+// Demana la contrasenya amb un camp propi: la darrera lletra es veu un instant i després es converteix en •
+function askPassword() {
+  return new Promise(resolve => {
+    const modal = document.getElementById('pwmodal'), inp = document.getElementById('pwinput');
+    let real = '', timer = null;
+    const paint = showLast => {
+      const n = real.length;
+      inp.value = '•'.repeat(showLast && n ? n - 1 : n) + (showLast && n ? real[n - 1] : '');
+      inp.dataset.shown = inp.value;
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+    };
+    const onInput = () => {
+      const shown = inp.dataset.shown || '', cur = inp.value;
+      let p = 0; while (p < shown.length && p < cur.length && shown[p] === cur[p]) p++;
+      let q = 0; while (q < shown.length - p && q < cur.length - p && shown[shown.length - 1 - q] === cur[cur.length - 1 - q]) q++;
+      const inserted = cur.slice(p, cur.length - q);
+      real = real.slice(0, p) + inserted + real.slice(p + (shown.length - p - q));
+      paint(inserted.length === 1 && p + 1 === real.length);
+      clearTimeout(timer);
+      timer = setTimeout(() => paint(false), 800);
+    };
+    const finish = val => {
+      clearTimeout(timer);
+      inp.removeEventListener('input', onInput);
+      inp.removeEventListener('keydown', onKey);
+      document.getElementById('pwok').onclick = null;
+      document.getElementById('pwcancel').onclick = null;
+      modal.classList.remove('open');
+      inp.value = ''; inp.dataset.shown = ''; real = '';
+      resolve(val);
+    };
+    const onKey = ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(real); }
+      else if (ev.key === 'Escape') finish(null);
+    };
+    inp.value = ''; inp.dataset.shown = '';
+    inp.addEventListener('input', onInput);
+    inp.addEventListener('keydown', onKey);
+    document.getElementById('pwok').onclick = () => finish(real);
+    document.getElementById('pwcancel').onclick = () => finish(null);
+    modal.classList.add('open');
+    inp.focus();
+  });
+}
+
+function dbError(msg) {
+  document.getElementById('matchpill').innerHTML = '<span class="pill bad">' + msg + '</span>';
+}
+
+document.getElementById('dbfile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    let text;
+    // xifrat si comença per "Salted__" (openssl), no per l'extensió: a l'iPad el selector no filtra bé i el nom pot canviar
+    const buf = await f.arrayBuffer();
+    if (new TextDecoder().decode(buf.slice(0, 8)) === 'Salted__') {
+      const pass = await askPassword();
+      if (pass === null) return;
+      try { text = await decryptOpenSSL(buf, pass); }
+      catch (err) { dbError('Contrasenya incorrecta o fitxer no vàlid'); return; }
+    } else {
+      text = new TextDecoder().decode(buf);
+    }
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) throw new Error('format');
+    DB = data;
+    document.getElementById('dbcount').textContent = DB.length;
+    document.getElementById('analitzabtn').disabled = false;
+    document.getElementById('matchpill').innerHTML = '<span class="pill ok">Base carregada (' + DB.length + ' clients, només a la memòria del navegador)</span>';
+  } catch (err) {
+    dbError('Fitxer no vàlid: cal fervert_db.json o fervert_db.json.enc');
+  }
+});
+
+const COLORS = ['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#00a5a5','#f032e6','#808000','#9a6324','#000075','#800000','#666666'];
+let monthly = [];      // clients seleccionats aquest mes (objectes de DB)
+let lastRoutes = [];   // resultat del càlcul
+let map = null, mapLayer = null;
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function precBadge(c){
+  const p = c.precisio || '';
+  if (!p) return '';
+  const cls = (p === 'municipi') ? 'prec-baix' : (p === 'poble' || p === 'rega?' || p === 'masia?' || p === 'carrer?') ? 'prec-mig' : 'prec-ok';
+  const tit = { masia:'masia exacta (nomenclàtor ICGC)', exacte:'lloc exacte (nomenclàtor ICGC o adreça verificada)', 'carrer?':'carrer correcte, número o nau aproximats', rega:'registre oficial ramader (REGA)', 'rega?':'REGA probable, pendent confirmar', 'masia?':'masia probable (nom gairebé igual), pendent confirmar', carrer:'adreça de carrer exacta', poble:'aproximat: centre del poble', municipi:'aproximat: centre del municipi' }[p] || p;
+  return ' <span class="prec ' + cls + '" title="' + tit + '">' + esc(p) + '</span>';
+}
+
+// clau per detectar el MATEIX client repetit = mateix contracte (id) AL MATEIX punt (coords).
+// Cal les dues coses: el camp 'id' es comparteix entre granges d'una mateixa empresa
+// (un mateix contracte pot tenir granges a diversos pobles) i punts iguals els comparteixen
+// empreses diferents (tres granges a la mateixa masia de Cassà). Només és repetició si coincideixen id i lloc.
+function dedupKey(c){
+  const xy = (c.lat != null && c.lon != null) ? c.lat.toFixed(5) + ',' + c.lon.toFixed(5) : '';
+  const base = (c.id != null && String(c.id) !== '') ? 'id:' + String(c.id) : 'nm:' + norm(c.nom) + '|' + norm(c.adreca || '');
+  return base + '@' + xy;
+}
+
+// mateix contracte al mateix poble
+function idPobleKey(c){
+  const base = (c.id != null && String(c.id) !== '') ? 'id:' + String(c.id) : 'nm:' + norm(c.nom);
+  return base + '|' + norm(c.poble);
+}
+const PRECIS = ['masia','rega','rega?','carrer'];
+
+// treu entrades imprecises (només centre del poble) quan hi ha una versió precisa del mateix contracte al mateix poble.
+// P.ex. un contracte amb una granja exacta (masia) + una entrada només de poble al mateix poble -> es queda només l'exacta.
+function dropRedundantImprecise(list){
+  const hasPrecise = new Set();
+  for (const c of list) if (PRECIS.includes(c.precisio)) hasPrecise.add(idPobleKey(c));
+  const out = list.filter(c => !(['poble','municipi'].includes(c.precisio) && hasPrecise.has(idPobleKey(c))));
+  return { list: out, dropped: list.length - out.length };
+}
+
+// dedup complet: pas 1 mateix punt exacte + pas 2 imprecís redundant al mateix poble
+function dedupClients(list){
+  const seen = new Set(), step1 = [];
+  let dups = 0;
+  for (const c of list){ const k = dedupKey(c); if (seen.has(k)){ dups++; continue; } seen.add(k); step1.push(c); }
+  const r = dropRedundantImprecise(step1);
+  return { list: r.list, dups: dups + r.dropped };
+}
+
+function carregaTots(){
+  const all = DB.filter(c => c.lat && c.lon);
+  const d = dedupClients(all);
+  monthly = d.list;
+  document.getElementById('matchpill').innerHTML =
+    '<span class="pill ok">' + monthly.length + ' clients carregats' + (d.dups ? ' · ' + d.dups + ' repetits fusionats' : '') + '</span>';
+  document.getElementById('warnbox').innerHTML = '';
+  document.getElementById('calcbtn').disabled = false;
+}
+
+async function analitza(){
+  const text = document.getElementById('paste').value;
+  const rows = parsePaste(text);
+  const matched = [];
+  const fuzzy = [], unmatched = [];
+  for (const r of rows){
+    let m = matchClient(r, DB);
+    // amb codi REGA, el registre oficial mana per sobre d'una coincidència dubtosa per nom
+    // o d'un punt aproximat de la base (centre del poble…); si el registre falla, es torna al de la base
+    const aprox = m && m.client.marca !== r.marca && ['poble', 'municipi', 'rega?', 'masia?', 'carrer?'].includes(m.client.precisio);
+    if (m && r.marca && (m.via === 'fuzzy?' || m.via === 'fuzzy' || aprox)) { if (aprox && m.via !== 'fuzzy?' && m.via !== 'fuzzy') r.base = m.client; m = null; }
+    if (m){
+      if (!m.client.lat || !m.client.lon){ unmatched.push({row:r, reason:'sense coordenades a la base'}); continue; }
+      matched.push(m.client);
+      if (m.via === 'fuzzy?' || m.via === 'fuzzy') fuzzy.push({row:r, client:m.client, via:m.via});
+    } else {
+      unmatched.push({row:r, reason:'no trobat a la base'});
+    }
+  }
+  const d = dedupClients(matched);
+  monthly = d.list;
+  const dups = d.dups;
+  // treu de la llista de "verificar" els que hagin quedat fusionats
+  const kept = new Set(monthly);
+  for (let i = fuzzy.length - 1; i >= 0; i--) if (!kept.has(fuzzy[i].client)) fuzzy.splice(i, 1);
+
+  // granges que no són a la base: es busquen al mapa (ICGC) automàticament
+  const pill = document.getElementById('matchpill');
+  const located = [], pending = [];
+  const calcbtn = document.getElementById('calcbtn'), anbtn = document.getElementById('analitzabtn');
+  calcbtn.disabled = true; anbtn.disabled = true;
+  let rega = {};
+  const marques = [...new Set(unmatched.map(u => u.row.marca).filter(Boolean))];
+  if (marques.length) {
+    pill.innerHTML = '<span class="pill warn">Consultant el registre ramader (REGA)…</span>';
+    try { rega = await regaLookup(marques); } catch (e) { rega = {}; }
+  }
+  for (let k = 0; k < unmatched.length; k++){
+    const u = unmatched[k];
+    pill.innerHTML = '<span class="pill warn">Buscant granges noves al mapa… ' + (k + 1) + '/' + unmatched.length + '</span>';
+    let cen = null, g = null;
+    const rg = u.row.marca && rega[u.row.marca];
+    if (!rg && u.row.base) { monthly.push(u.row.base); continue; }
+    if (rg) { cen = { poble: rg.poble }; g = rg; }
+    else if (u.row.poble) {
+      cen = pobleCentroid(u.row.poble);
+      if (!cen) { try { cen = await geocodePoble(u.row.poble); } catch (e) { cen = null; } }
+      if (cen) { try { g = await geocodeGranja(u.row, cen); } catch (e) { g = null; } }
+    }
+    if (g) {
+      const c = { id:u.row.id||'', nom:u.row.nom||u.row.raw.slice(0,40), adreca:u.row.adreca||'',
+        poble:cen.poble, zona:g.zona||'', lat:g.lat, lon:g.lon, precisio:g.precisio };
+      monthly.push(c);
+      if (g.precisio === 'masia' || g.precisio === 'carrer' || g.precisio === 'rega') located.push({ row:u.row, nomLloc:g.nomLloc, rega:g.precisio === 'rega' });
+      else fuzzy.push({ row:u.row, client:{ nom:g.nomLloc, poble:cen.poble }, via:'mapa' });
+    } else {
+      u.cen = cen;
+      pending.push(u);
+    }
+  }
+
+  let html = '';
+  pill.innerHTML = '<span class="pill ' + (pending.length ? 'warn' : 'ok') + '">' +
+    monthly.length + ' identificats' + (dups ? ' · ' + dups + ' repetits fusionats' : '') +
+    (pending.length ? ' · ' + pending.length + ' pendents' : '') + '</span>';
+  if (located.length){
+    html += '<details><summary><span class="pill ok">✓ ' + located.length + ' granges noves localitzades al mapa</span></summary><ul>' +
+      located.map(l => '<li>' + esc(l.row.nom) + ' → <b>' + esc(l.nomLloc) + '</b> (' + esc(l.row.poble) + ')' + (l.rega ? ' · registre oficial' : '') + '</li>').join('') + '</ul></details>';
+  }
+  if (fuzzy.length){
+    html += '<div><span class="pill warn">Verificar (' + fuzzy.length + ' per similitud de nom)</span><ul>' +
+      fuzzy.map(f => '<li>«' + esc(f.row.nom) + (f.via === 'mapa' && f.row.adreca ? ' · ' + esc(f.row.adreca) : '') + '» → <b>' + esc(f.client.nom) + '</b> (' + esc(f.client.poble) + ')</li>').join('') +
+      '</ul></div>';
+  }
+  if (pending.length){
+    html += '<div><span class="pill bad">No trobats al mapa — s\'exclouen del càlcul</span> ' +
+      (pending.filter(u => u.cen).length > 1 ? '<button class="mini" onclick="afegeixTotsPobles()">＋ afegeix-los tots al centre del seu poble</button>' : '') +
+      '<ul id="unmatchedlist">' +
+      pending.map((u,i) =>
+        '<li>' + esc(u.row.raw.slice(0,90)) + ' <i>(' + (u.cen ? 'granja no trobada' : u.row.poble ? 'poble no trobat' : u.reason) + ')</i> ' +
+        (u.cen ? '<button class="mini addp" data-i="' + i + '" onclick="afegeixPoble(' + i + ', this)">＋ afegir al centre de ' + esc(u.cen.poble) + '</button>' : '') +
+        '</li>').join('') + '</ul></div>';
+  }
+  window._unmatched = pending;
+  document.getElementById('warnbox').innerHTML = html;
+  calcbtn.disabled = monthly.length === 0;
+  anbtn.disabled = false;
+}
+
+function pobleCentroid(poble){
+  const p = norm(poble);
+  if (!p) return null;
+  const hits = DB.filter(c => c.lat && c.lon && norm(c.poble) === p);
+  if (!hits.length) return null;
+  return {
+    poble: hits[0].poble,
+    lat: hits.reduce((s,c)=>s+c.lat,0)/hits.length,
+    lon: hits.reduce((s,c)=>s+c.lon,0)/hits.length
+  };
+}
+
+// coordenades oficials del Registre d'explotacions ramaderes (dades obertes Generalitat). Només s'envien els codis.
+async function regaLookup(marques){
+  const out = {};
+  if (!marques.length) return out;
+  const dms = t => { const v = String(t).match(/[\d.]+/g).map(Number); return v[0] + v[1] / 60 + v[2] / 3600; };
+  const where = 'marca_oficial in(' + marques.map(m => "'" + m.replace(/[^0-9A-Z]/g, '') + "'").join(',') + ')';
+  const r = await fetch('https://analisi.transparenciacatalunya.cat/resource/7bpt-5azk.json?$limit=5000' +
+    '&$select=marca_oficial,nom_explotaci,municipi,comarca,latitud,longitud&$where=' + encodeURIComponent(where));
+  for (const x of await r.json()) {
+    if (out[x.marca_oficial] || !x.latitud || !x.longitud) continue;
+    out[x.marca_oficial] = { nomLloc: x.nom_explotaci, poble: x.municipi, zona: x.comarca || '',
+      lat: dms(x.latitud), lon: dms(x.longitud), precisio: 'rega' };
+  }
+  return out;
+}
+
+// centre del municipi via geocodificador de l'ICGC (només s'envia el nom del poble)
+async function geocodePoble(poble){
+  // cal que el nom del resultat coincideixi amb el poble (sinó, el geocodificador retorna coses semblants: Beulaigua→Bellaguarda)
+  const queries = [poble, poble.replace(/\s+(de|del|d')\s*.*$/i, '')].filter((q, k, a) => q && a.indexOf(q) === k);
+  for (const q of queries) {
+    const r = await fetch('https://eines.icgc.cat/geocodificador/cerca?limit=8&text=' + encodeURIComponent(q));
+    const j = await r.json();
+    const hits = (j.features || []).filter(f => f.properties.layer !== 'address' && norm(f.properties.nom) === norm(q));
+    const f = hits.find(f => f.properties.addendum && f.properties.addendum.tipus === 'Cap de municipi') || hits[0];
+    if (f) return { poble: f.properties.nom, zona: f.properties.comarca || '', lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
+  }
+  return null;
+}
+
+// ---- localitzar la granja pel nom (nomenclàtor ICGC), a prop del centre del poble ----
+const PREFIX_LLOC = /^((mas|can|ca n|cal|ca l|el|la|les|els|l|granja|granges|granjas|sat)\s+)+/;
+const coreLloc = t => norm(t).replace(PREFIX_LLOC, '').trim();
+const VIA = /^(carrer|cami|carretera|avinguda|placa|passatge|passeig|ronda|travessera|pista)\b/;
+
+// noms candidats: explotació (sense codis tipus "BI01-") i, si és una empresa o masia, el nom del client.
+// Mai s'envien noms de persona (p. ex. "Joan Galí") al geocodificador.
+function nomsGranja(row){
+  const out = [];
+  String(row.adreca || '').replace(/^[A-Z]{0,3}\d+[A-Z]?\d*\s*-\s*/, '').split(/\s+-\s+/).forEach(t => {
+    t = t.trim(); if (!t) return;
+    out.push(t);
+    const w = t.split(/\s+/).slice(0, -1);                      // "La Riera desmamador" -> "La Riera"
+    if (w.length >= 2 && !/^(de|del|d|la|les|els|el|i)$/i.test(w[w.length - 1])) out.push(w.join(' '));
+  });
+  const nom = String(row.nom || '');
+  if (/\b(SL|SLU|SCP|SAT|SA|SC|SCCL)\b|^(ca|can|cal|mas|granja|granges)\b/i.test(nom))
+    out.push(nom.replace(/,?\s*\b(SL|SLU|SCP|SAT|SA|SC|SCCL)\b\.?/gi, '').trim());
+  return [...new Set(out)].filter(t => coreLloc(t).length >= 3);
+}
+
+const geoCache = {};
+async function icgc(text){
+  if (!(text in geoCache)) {
+    const r = await fetch('https://eines.icgc.cat/geocodificador/cerca?limit=30&text=' + encodeURIComponent(text));
+    geoCache[text] = (await r.json()).features || [];
+  }
+  return geoCache[text];
+}
+
+// 1r: nom exacte (sense articles ni "Mas/Can…") a ≤ 8 km del poble -> 'masia'.
+// 2n: nom amb una lletra de diferència (Rubaix/Ruaix) -> 'masia?', cal confirmar.
+async function geocodeGranja(row, cen){
+  // adreça de carrer ("C/Ermita de Sant Francesc, 5"): cerca postal al mateix municipi (l'ICGC tolera faltes)
+  const adr = String(row.adreca || '').trim();
+  if (/^(c\/|c\.|carrer|ctra|carretera|av\.?|avinguda|pl\.?|plaça|pg\.?|passeig)\s*/i.test(adr)) {
+    const q = adr.replace(/^c[\/.]\s*/i, 'Carrer ') + ', ' + cen.poble;
+    const f = (await icgc(q)).find(f => f.properties.layer === 'address' && norm(f.properties.municipi) === norm(cen.poble));
+    if (f) return { nomLloc: f.properties.etiqueta || f.properties.nom, zona: f.properties.comarca || cen.zona || '',
+      lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], precisio: 'carrer' };
+  }
+  let probable = null;
+  for (const nom of nomsGranja(row)) {
+    const core = coreLloc(nom);
+    for (const q of [nom, core, core + ' ' + cen.poble]) {
+      for (const f of await icgc(q)) {
+        const p = f.properties, c = f.geometry.coordinates;
+        const tip = (p.addendum && p.addendum.tipus) || '';
+        if (VIA.test(norm(p.nom))) continue;                       // carrers i camins no són la granja
+        if (p.layer !== 'address' && !/Edificaci|Disseminat|Indret|Entitat|Nucli/.test(tip)) continue;
+        if (haversine({ lat: c[1], lon: c[0] }, cen) > 8) continue;
+        const g = { nomLloc: p.nom, zona: p.comarca || cen.zona || '', lat: c[1], lon: c[0] };
+        if (coreLloc(p.nom) === core) return Object.assign(g, { precisio: 'masia' });
+        if (!probable && core.length >= 5 && editDist1(coreLloc(p.nom), core)) probable = Object.assign(g, { precisio: 'masia?' });
+      }
+    }
+  }
+  return probable;
+}
+
+function afegeixPoble(i, btn){
+  const u = window._unmatched[i];
+  if (u.added || !u.cen) return;
+  u.added = true;
+  monthly.push({ id:u.row.id||'', nom:u.row.nom||u.row.raw.slice(0,40), adreca:u.row.adreca||'',
+    poble:u.cen.poble, zona:u.cen.zona||'', lat:u.cen.lat, lon:u.cen.lon, precisio:'poble' });
+  document.getElementById('matchpill').innerHTML = '<span class="pill ok">' + monthly.length + ' identificats</span>';
+  btn.disabled = true;
+  btn.textContent = '✓ afegit al centre de ' + u.cen.poble;
+  document.getElementById('calcbtn').disabled = false;
+}
+
+async function afegeixTotsPobles(){
+  for (const b of [...document.querySelectorAll('#unmatchedlist button.addp:not(:disabled)')]) afegeixPoble(+b.dataset.i, b);
+}
+
+let lastGeoms = [];      // geometria real per carretera de cada ruta (o null)
+let matCache = null;     // { sig, M } — matriu OSRM reutilitzable entre càlculs
+
+function setStatus(t){ document.getElementById('status').textContent = t; }
+function fmtHM(mins){ const h = Math.floor(mins/60), m = Math.round(mins%60); return h + 'h ' + (m<10?'0':'') + m + 'min'; }
+
+let lastRouteZones = [];   // 'NE'/'SW' per ruta (només mode zones)
+let usedReal = false;   // el darrer càlcul va usar km reals (OSRM) o fallback recta
+
+async function calcula(){
+  const btn = document.getElementById('calcbtn');
+  btn.disabled = true;
+  try {
+    await calculaOSRM();
+  } catch (e) {
+    setStatus('⚠ Servidor de rutes no disponible — càlcul aproximat per línia recta');
+    calculaRecta();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- mode per zones (fixes) ----
+// Nord-Est = Empordà (Alt, Mig, Eix) + Pla de l'Estany + Garrotxa. Resta = Sud-Oest.
+const ZONES_NE = ['Alt Empordà', "Pla de l'Estany", 'Eix Empordà', 'Mig Empordà', 'Garrotxa'];
+
+function zoneOfClient(c){
+  const z = (c.zona || '').trim();
+  if (z) return ZONES_NE.includes(z) ? 'NE' : 'SW';
+  const a = angleDeg(c);          // sense comarca: sector 30°-145° (est→nord→nord-oest) = Nord-Est
+  return (a >= 30 && a <= 145) ? 'NE' : 'SW';
+}
+
+function getMaxKm(){ const v = +document.getElementById('maxkm').value; return v > 0 ? v : Infinity; }
+
+async function calculaOSRM(){
+  const maxPer = +document.getElementById('maxper').value || 18;
+  const maxKm = getMaxKm();
+  const points = [DEPOT, ...monthly];
+  const sig = points.map(p => p.lat.toFixed(5) + ',' + p.lon.toFixed(5)).join('|');
+  let M;
+  if (matCache && matCache.sig === sig) M = matCache.M;
+  else {
+    setStatus('Descarregant temps reals de conducció…');
+    M = await buildMatrix(points, (d, t) => setStatus('Temps reals de conducció: bloc ' + d + '/' + t));
+    matCache = { sig, M };
+  }
+  setStatus('Optimitzant rutes per zones…');
+  const all = monthly.map((c, i) => ({ lat: c.lat, lon: c.lon, mi: i + 1 }));
+  let idxRoutes;
+  lastRouteZones = [];
+  if (document.getElementById('mode').value === 'zones') {
+    idxRoutes = [];
+    for (const z of ['NE', 'SW']) {
+      const part = all.filter(c => zoneOfClient(monthly[c.mi - 1]) === z);
+      clusterMatrix(part, M, maxPer, maxKm).forEach(r => { idxRoutes.push(r); lastRouteZones.push(z); });
+    }
+  } else {
+    idxRoutes = clusterMatrix(all, M, maxPer, maxKm);
+  }
+  lastRoutes = idxRoutes.map(r => r.map(mi => monthly[mi - 1]));
+  lastGeoms = [];
+  const stats = [];
+  for (let i = 0; i < lastRoutes.length; i++) {
+    setStatus('Recorregut per carretera ' + (i + 1) + '/' + lastRoutes.length + '…');
+    try {
+      const g = await fetchRouteGeo(lastRoutes[i], DEPOT);
+      lastGeoms.push(g.latlngs);
+      stats.push({ km: g.km, driveMin: g.mins });
+    } catch (e) {
+      lastGeoms.push(null);
+      stats.push({ km: routeCostM(idxRoutes[i], M, 'dist') / 1000, driveMin: routeCostM(idxRoutes[i], M, 'dur') / 60 });
+    }
+  }
+  setStatus('');
+  usedReal = true;
+  renderResultats(stats);
+}
+
+function calculaRecta(){
+  const maxPer = +document.getElementById('maxper').value || 18;
+  matCache = null;
+  lastRouteZones = [];
+  lastRoutes = cluster(monthly, DEPOT, maxPer);
+  lastGeoms = lastRoutes.map(() => null);
+  const stats = lastRoutes.map(r => {
+    const km = routeKm(r, DEPOT, 1.3);
+    return { km, driveMin: km / 50 * 60 };
+  });
+  usedReal = false;
+  renderResultats(stats);
+}
+
+let lastStats = [];
+function renderResultats(stats){
+  lastStats = stats;
+  const real = usedReal;
+  const maxKm = getMaxKm();
+  const llindar = isFinite(maxKm) ? Math.max(maxKm + 5, maxKm * 1.03) : Infinity; // tolerància matriu vs geometria real
+  let totKm = 0, totDrive = 0, html = '', over = 0;
+  lastRoutes.forEach((r, i) => {
+    const { km, driveMin } = stats[i];
+    totKm += km; totDrive += driveMin;
+    const col = COLORS[i % COLORS.length];
+    const excedeix = km > llindar;
+    if (excedeix) over++;
+    html += '<div class="ruta" style="border-top-color:' + col + '">' +
+      '<h3 style="color:' + col + '"><label style="cursor:pointer"><input type="checkbox" class="rsel" data-i="' + i + '" checked onchange="toggleRoute(' + i + ', this.checked)" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;accent-color:' + col + '">Ruta ' + (i+1) + ' · Dia ' + (i+1) + (lastRouteZones[i] ? ' · <span style="font-weight:600;font-size:12px">' + (lastRouteZones[i] === 'NE' ? 'Nord-Est' : 'Sud-Oest') + '</span>' : '') + '</label></h3>' +
+      '<div class="meta">' + r.length + ' recollides · <b' + (excedeix ? ' style="color:#b71c1c"' : '') + '>' + km.toFixed(0) + ' km' + (real ? ' reals' : '') +
+        (excedeix ? ' ⚠ supera ' + maxKm + '</b>' : '</b>') + ' · ' + fmtHM(drivemin_guard(driveMin)) + ' de conducció</div>' +
+      '<ol>' + r.map(c =>
+        '<li>' + esc(c.nom) + precBadge(c) + ' <span class="pob">— ' + esc(c.poble) +
+        (c.adreca ? ' · ' + esc(c.adreca) : '') + '</span></li>').join('') + '</ol>' +
+      '<div class="links noprint">' + gmapsLinks(r) + '</div>' +
+      '</div>';
+  });
+  document.getElementById('rutes').innerHTML = html;
+  selectedRoutes = new Set(lastRoutes.map((_, i) => i));
+  let warn = '';
+  if (over){
+    // clients que sols ja superen el límit (round-trip dipòsit→client→dipòsit) — fan impossible el límit
+    const impossibles = matCache ? monthly.filter(c => {
+      const j = monthly.indexOf(c) + 1;
+      return (matCache.M.dist[0][j] + matCache.M.dist[j][0]) / 1000 > maxKm;
+    }) : [];
+    warn = '<div style="margin-top:8px;padding:8px 10px;background:#ffebee;border-radius:6px;font-size:13px;color:#b71c1c">' +
+      '⚠ ' + over + ' dia(s) superen el límit de ' + maxKm + ' km.' +
+      (impossibles.length ? ' Impossible de complir: ' + impossibles.length + ' client(s) queden a més de ' + maxKm + ' km d\'anada i tornada del dipòsit (' +
+        impossibles.slice(0,4).map(c => esc(c.poble)).join(', ') + (impossibles.length>4?'…':'') + '). Cal apujar el límit o fer aquests clients a part.' :
+        ' Prova d\'abaixar «clients per dia» perquè quedi més marge de km.') + '</div>';
+  }
+  document.getElementById('totline').innerHTML =
+    '<b>' + lastRoutes.length + ' dies</b> per a ' + monthly.length + ' clients · <b>' + totKm.toFixed(0) + ' km' +
+    (real ? ' reals per carretera' : ' estimats') + ' tot el mes</b> · ' + fmtHM(totDrive) + ' de conducció total' + warn;
+  document.getElementById('results').style.display = '';
+  drawMap();
+  document.getElementById('results').scrollIntoView({behavior:'smooth'});
+}
+
+function drivemin_guard(m){ return isFinite(m) ? m : 0; }
+
+function depotDistKm(c){
+  if (matCache) {
+    const idx = monthly.indexOf(c);
+    if (idx >= 0) return matCache.M.dist[0][idx + 1] / 1000;
+  }
+  return haversine(c, DEPOT);
+}
+
+// distància al client més proper (entre tots els del mes, no només de la mateixa ruta)
+function nearestNeighborKm(c){
+  const useOSRM = !!matCache;
+  const idx = useOSRM ? monthly.indexOf(c) + 1 : -1;
+  let best = Infinity;
+  for (const other of monthly) {
+    if (other === c) continue;
+    let d;
+    if (useOSRM) {
+      const j = monthly.indexOf(other) + 1;
+      d = (matCache.M.dist[idx][j] + matCache.M.dist[j][idx]) / 2 / 1000;
+    } else {
+      d = haversine(c, other);
+    }
+    if (d < best) best = d;
+  }
+  return isFinite(best) ? best : 0;
+}
+
+function drawAngleChart(){
+  const box = document.getElementById('anglechart');
+  const pts = [];
+  lastRoutes.forEach((r, i) => r.forEach(c => pts.push({ c, i, xd: depotDistKm(c), yd: nearestNeighborKm(c) })));
+  if (!pts.length){ box.innerHTML = ''; return; }
+
+  const W = 960, H = 400, ML = 56, MR = 18, MT = 14, MB = 44;
+  const iw = W - ML - MR, ih = H - MT - MB;
+  const maxX = Math.max(...pts.map(p => p.xd)) * 1.08;
+  const maxY = Math.max(...pts.map(p => p.yd)) * 1.15 || 1;
+  const X = v => ML + (v / maxX) * iw;
+  const Y = v => MT + ih - (v / maxY) * ih;
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;background:#fff;border-radius:8px">';
+
+  // gridlines Y (veí més proper) — 5 trams
+  for (let g = 0; g <= 5; g++){
+    const v = maxY * g / 5;
+    const y = Y(v);
+    svg += '<line x1="' + ML + '" y1="' + y + '" x2="' + (W - MR) + '" y2="' + y + '" stroke="#eee"/>';
+    svg += '<text x="' + (ML - 8) + '" y="' + (y + 4) + '" font-size="11" fill="#888" text-anchor="end">' + v.toFixed(0) + ' km</text>';
+  }
+  // gridlines X (distància dipòsit) — 6 trams
+  for (let g = 0; g <= 6; g++){
+    const v = maxX * g / 6;
+    const x = X(v);
+    svg += '<line x1="' + x + '" y1="' + MT + '" x2="' + x + '" y2="' + (MT + ih) + '" stroke="#f2f2f2"/>';
+    svg += '<text x="' + x + '" y="' + (MT + ih + 18) + '" font-size="11" fill="#888" text-anchor="middle">' + v.toFixed(0) + ' km</text>';
+  }
+  svg += '<text x="' + (ML + iw/2) + '" y="' + (H - 6) + '" font-size="12" fill="#555" text-anchor="middle">Distància al dipòsit (km)</text>';
+  svg += '<text x="14" y="' + (MT + ih/2) + '" font-size="12" fill="#555" text-anchor="middle" transform="rotate(-90 14 ' + (MT + ih/2) + ')">Distància al client més proper (km)</text>';
+
+  // punts
+  pts.forEach(p => {
+    const col = COLORS[p.i % COLORS.length];
+    const cx = X(p.xd), cy = Y(p.yd);
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="5" fill="' + col + '" stroke="#fff" stroke-width="1.2" opacity="0.9">' +
+      '<title>' + esc(p.c.nom) + ' — ' + esc(p.c.poble) + '\nRuta ' + (p.i + 1) + ' · ' + p.xd.toFixed(0) + ' km al dipòsit · veí a ' + p.yd.toFixed(1) + ' km</title>' +
+      '</circle>';
+  });
+
+  svg += '</svg>';
+  box.innerHTML = svg;
+}
+
+function gmapsLinks(r){
+  // Google Maps admet 10 punts per enllaç. Sense dipòsit: el mòbil navega des de la ubicació actual.
+  const links = [];
+  for (let start = 0, part = 1; start < r.length; start += 10, part++){
+    const seg = r.slice(start, start + 10);
+    const url = 'https://www.google.com/maps/dir/' + seg.map(p => p.lat.toFixed(6) + ',' + p.lon.toFixed(6)).join('/');
+    links.push('<a href="' + url + '" target="_blank">🗺 Navegació' + (r.length > 10 ? ' tram ' + part : '') + '</a>');
+  }
+  return links.join(' ');
+}
+
+function drawMap(){
+  if (!map){
+    map = L.map('map');
+    // Mapa base de l'ICGC (dades obertes de Catalunya, sense clau). Recanvi: Esri si falla.
+    const base = L.tileLayer('https://geoserveis.icgc.cat/servei/catalunya/mapa-base/wmts/estandard/MON3857NW/{z}/{x}/{y}.png',
+      { attribution:'Cartografia © Institut Cartogràfic i Geològic de Catalunya (CC BY 4.0)', maxZoom:18 }).addTo(map);
+    let swapped = false;
+    base.on('tileerror', () => {
+      if (swapped) return;
+      swapped = true;
+      map.removeLayer(base);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        { attribution:'Tiles © Esri', maxZoom:18 }).addTo(map);
+    });
+  }
+  if (mapLayer) map.removeLayer(mapLayer);
+  mapLayer = L.layerGroup().addTo(map);
+  L.marker([DEPOT.lat, DEPOT.lon], { icon: L.divIcon({ html:'🏭', className:'', iconSize:[24,24] }) })
+    .bindPopup('<b>Fer-Vet</b><br>Riudellots de la Selva').addTo(mapLayer);
+  const allPts = [[DEPOT.lat, DEPOT.lon]];
+  lastRoutes.forEach((r, i) => {
+    if (!selectedRoutes.has(i)) return;
+    const col = COLORS[i % COLORS.length];
+    const pts = lastGeoms[i] || [[DEPOT.lat, DEPOT.lon], ...r.map(c => [c.lat, c.lon]), [DEPOT.lat, DEPOT.lon]];
+    L.polyline(pts, { color: col, weight: 3, opacity: .75 }).addTo(mapLayer);
+    r.forEach((c, j) => {
+      allPts.push([c.lat, c.lon]);
+      L.marker([c.lat, c.lon], { icon: L.divIcon({
+        html: '<div style="background:' + col + ';color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + (j+1) + '</div>',
+        className:'', iconSize:[22,22], iconAnchor:[11,11] })
+      }).bindPopup('<b>' + esc(c.nom) + '</b><br>' + esc(c.adreca||'') + '<br>' + esc(c.poble) + '<br><i>Ruta ' + (i+1) + ' · parada ' + (j+1) + '</i>').addTo(mapLayer);
+    });
+  });
+  if (allPts.length > 1) map.fitBounds(allPts, { padding:[30,30] });
+  else map.setView([DEPOT.lat, DEPOT.lon], 10);
+}
+
+// rutes visibles al mapa (índexs); per defecte totes
+let selectedRoutes = new Set();
+
+function toggleRoute(i, on){
+  if (on) selectedRoutes.add(i); else selectedRoutes.delete(i);
+  drawMap();
+}
+
+function selectAllRoutes(on){
+  selectedRoutes = on ? new Set(lastRoutes.map((_, i) => i)) : new Set();
+  document.querySelectorAll('.rsel').forEach(cb => { cb.checked = on; });
+  drawMap();
+}
+
+function exportCSV(){
+  let csv = 'Ruta;Ordre;Id;Nom;Adreça;Poble;Lat;Lon;Precisió\n';
+  lastRoutes.forEach((r, i) => {
+    r.forEach((c, j) => {
+      csv += [i+1, j+1, c.id||'', '"'+(c.nom||'')+'"', '"'+(c.adreca||'')+'"', '"'+(c.poble||'')+'"',
+        c.lat.toFixed(6), c.lon.toFixed(6), c.precisio||''].join(';') + '\n';
+    });
+    const km = lastStats[i] ? lastStats[i].km : 0;
+    csv += [i+1, '', '', '"— TOTAL RUTA ' + (i+1) + ': ' + km.toFixed(0) + ' km —"','','','','',''].join(';') + '\n';
+  });
+  const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fervert_rutes.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
+
