@@ -2,10 +2,11 @@
 <html lang="ca">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://unpkg.com; style-src 'unsafe-inline' https://unpkg.com; img-src data: blob: https://unpkg.com https://geoserveis.icgc.cat https://server.arcgisonline.com; connect-src https://eines.icgc.cat https://router.project-osrm.org https://analisi.transparenciacatalunya.cat; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fer-Vet — Optimitzador de rutes de recollida</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   :root { --verd:#2e7d32; --verd-fosc:#1b5e20; --verd-clar:#e8f5e9; --gris:#f5f5f5; }
   * { box-sizing: border-box; }
@@ -808,7 +809,7 @@ function askPassword() {
 }
 
 function dbError(msg) {
-  document.getElementById('matchpill').innerHTML = '<span class="pill bad">' + msg + '</span>';
+  document.getElementById('matchpill').innerHTML = '<span class="pill bad">' + esc(msg) + '</span>';
 }
 
 document.getElementById('dbfile').addEventListener('change', async e => {
@@ -1322,7 +1323,7 @@ function gmapsLinks(r){
   for (let start = 0, part = 1; start < r.length; start += 10, part++){
     const seg = r.slice(start, start + 10);
     const url = 'https://www.google.com/maps/dir/' + seg.map(p => p.lat.toFixed(6) + ',' + p.lon.toFixed(6)).join('/');
-    links.push('<a href="' + url + '" target="_blank">🗺 Navegació' + (r.length > 10 ? ' tram ' + part : '') + '</a>');
+    links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer">🗺 Navegació' + (r.length > 10 ? ' tram ' + part : '') + '</a>');
   }
   return links.join(' ');
 }
